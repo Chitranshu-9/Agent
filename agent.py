@@ -1,7 +1,7 @@
 from openai import OpenAI
 import os, json
 from openai import OpenAI
-from tools import TOOLS, execute_tool
+from tools_starter import TOOLS, execute_tool
 
 
 client = OpenAI(

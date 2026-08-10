@@ -1,62 +1,48 @@
-TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "check_calendar",
-            "description": "Check calendar events",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "date": {"type": "string"}
-                }
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "search_web",
-            "description": "Search the web",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string"}
-                }
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_user_preferences",
-            "description": "Get user preferences",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "category": {"type": "string"}
-                }
-            }
-        }
-    }
-]
+import os, json
+from openai import OpenAI
+from tools_starter import TOOLS, execute_tool
 
-def check_calendar(date=None):
-    return "10am: Standup, 2pm: Dentist"
+MAX_ITERATIONS = 10
+SYSTEM_PROMPT = "You are a helpful assistant."
 
-def search_web(query):
-    return f"Top result for '{query}': ..."
+client = OpenAI(
+    api_key=os.getenv("OPENAI_API_KEY"),
+    base_url=os.getenv("OPENAI_API_BASE")
+)
 
-def get_user_preferences(category):
-    return f"Preferences for {category}: None"
 
-def execute_tool(name, args):
-    funcs = {
-        "check_calendar": check_calendar,
-        "search_web": search_web,
-        "get_user_preferences": get_user_preferences
-    }
+def run_agent(user_message, history=None):
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 
-    if name not in funcs:
-        return f"Unknown tool: {name}"
+    if history:
+        messages.extend(history)
 
-    return funcs[name](**args)
+    messages.append({"role": "user", "content": user_message})
+
+    for _ in range(MAX_ITERATIONS):
+        response = client.chat.completions.create(
+            model="openai/gpt-4.1-mini",
+            messages=messages,
+            tools=TOOLS
+        )
+
+        choice = response.choices[0]
+
+        if choice.finish_reason == "tool_calls":
+            messages.append(choice.message)
+
+            for tc in choice.message.tool_calls:
+                try:
+                    args = json.loads(tc.function.arguments)
+                    result = execute_tool(tc.function.name, args)
+                except Exception as e:
+                    result = f"Error: {e}"
+
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": result
+                })
+
+        elif choice.finish_reason == "stop":
+            return choice.message.content
